@@ -198,12 +198,13 @@ end
 
 --------------------------------------------------------------------------------
 
+TrackedActionSlots = {}
 local function UpdateHeroicStrike()
+TrackedActionSlots = {}
 	local _, class = UnitClass("player")
 	if class ~= "WARRIOR" then
 		return
 	end
-	TrackedActionSlots = {}
 	local SPActionSlot = 0;
 	for SPActionSlot = 1, 120 do
 		local SPActionText = GetActionText(SPActionSlot);
@@ -362,29 +363,32 @@ local function UpdateAppearance()
 	SP_ST_FrameRange:SetScale(SP_ST_GS["s"])
 end
 
-local function GetWeaponSpeed(off,ranged)
+local function GetWeaponSpeed(weapon)
 	local speedMH, speedOH = UnitAttackSpeed("player")
-	if off and not ranged then
+	if weapon == 0 then
+		return speedMH
+	end
+	if weapon == 1 then
 		return speedOH
-	elseif not off and ranged then
+	end
+	if weapon == 2 then
 		local rangedAttackSpeed, minDamage, maxDamage, physicalBonusPos, physicalBonusNeg, percent = UnitRangedDamage("player")
 		return rangedAttackSpeed
-	else
-		return speedMH
 	end
 end
 
 local function isDualWield()
-	return (GetWeaponSpeed(true) ~= nil)
+	return (GetWeaponSpeed(1) ~= nil)
 end
 
 local function hasRanged()
-	return (GetWeaponSpeed(nil,true) ~= nil)
+  if GetWeaponSpeed(2) == 1 then return false end
+	return true
 end
 
 local function ShouldResetTimer(off)
-	if not st_timerMax then st_timerMax = GetWeaponSpeed(false) end
-	if not st_timerOffMax and isDualWield() then st_timerOffMax = GetWeaponSpeed(true) end
+	if not st_timerMax then st_timerMax = GetWeaponSpeed(0) end
+	if not st_timerOffMax and isDualWield() then st_timerOffMax = GetWeaponSpeed(1) end
 	local percentTime
 	if (off) then
 		percentTime = st_timerOff / st_timerOffMax
@@ -396,8 +400,8 @@ local function ShouldResetTimer(off)
 end
 
 local function ClosestSwing()
-	if not st_timerMax then st_timerMax = GetWeaponSpeed(false) end
-	if not st_timerOffMax then st_timerOffMax = GetWeaponSpeed(true) end
+	if not st_timerMax then st_timerMax = GetWeaponSpeed(0) end
+	if not st_timerOffMax then st_timerOffMax = GetWeaponSpeed(1) end
 	local percentLeftMH = st_timer / st_timerMax
 	local percentLeftOH = st_timerOff / st_timerOffMax
 	return (percentLeftMH > percentLeftOH)
@@ -426,26 +430,26 @@ local function UpdateWeapon()
 	end
 end
 
-local function ResetTimer(off,ranged)
-	if not off and not ranged then
-		st_timerMax = GetWeaponSpeed(off)
-		st_timer = GetWeaponSpeed(off)
-	elseif off and not ranged then
-		st_timerOffMax = GetWeaponSpeed(off)
-		st_timerOff = GetWeaponSpeed(off)
+local function ResetTimer(weapon)
+	if weapon == 0 then
+		st_timerMax = GetWeaponSpeed(0)
+		st_timer = GetWeaponSpeed(0)
+	elseif weapon == 1 then
+		st_timerOffMax = GetWeaponSpeed(1)
+		st_timerOff = GetWeaponSpeed(1)
 	else
 		range_fader = GetTime()
-		st_timerRangeMax = GetWeaponSpeed(false,true)
-		st_timerRange = GetWeaponSpeed(false,true)
+		st_timerRangeMax = GetWeaponSpeed(2)
+		st_timerRange = GetWeaponSpeed(2)
 	end
 
-	if not off and not ranged then SP_ST_Frame:Show() end
+	if weapon == 0 then SP_ST_Frame:Show() end
 	if (isDualWield()) then SP_ST_FrameOFF:Show() end
 	if (hasRanged()) then SP_ST_FrameRange:Show() end
 end
 
 local function TestShow()
-	ResetTimer(false)
+	ResetTimer(0)
 end
 
 
@@ -454,13 +458,33 @@ local function UpdateDisplay()
 	local show_oh = SP_ST_GS["show_oh"]
 	local show_range = SP_ST_GS["show_range"]
 	if SP_ST_InRange() then
-		SP_ST_FrameTime:SetVertexColor(1.0, 1.0, 1.0);
+		if HeroicStrikeQueued() then
+			SP_ST_mainhand:SetVertexColor(1.0, 0.9, 0.2);
+			SP_ST_FrameTime:SetVertexColor(0.862, 0.7, 0.137);
+			SP_ST_maintimer:SetVertexColor(1.0, 0.9, 0.2);
+		else 
+			SP_ST_mainhand:SetVertexColor(1.0, 1.0, 1.0);
+			SP_ST_FrameTime:SetVertexColor(1.0, 1.0, 1.0);
+			SP_ST_maintimer:SetVertexColor(1.0, 1.0, 1.0);
+		end
+		SP_ST_offhand:SetVertexColor(1.0, 1.0, 1.0);
 		SP_ST_FrameTime2:SetVertexColor(1.0, 1.0, 1.0);
+		SP_ST_offtimer:SetVertexColor(1.0, 1.0, 1.0);
 		SP_ST_Frame:SetBackdropColor(0,0,0,0.8);
 		SP_ST_FrameOFF:SetBackdropColor(0,0,0,0.8);
 	else
-		SP_ST_FrameTime:SetVertexColor(1.0, 0, 0);
+		if HeroicStrikeQueued() then
+			SP_ST_mainhand:SetVertexColor(1.0, 0.7, 0.15);
+			SP_ST_FrameTime:SetVertexColor(1.0, 0.45, 0.055);
+			SP_ST_maintimer:SetVertexColor(1.0, 0.7, 0.15);
+		else
+			SP_ST_mainhand:SetVertexColor(1.0, 0, 0);
+			SP_ST_FrameTime:SetVertexColor(1.0, 0, 0);
+			SP_ST_maintimer:SetVertexColor(1.0, 0.75, 0.75);
+		end
+		SP_ST_offhand:SetVertexColor(1.0, 0, 0);
 		SP_ST_FrameTime2:SetVertexColor(1.0, 0, 0);
+		SP_ST_offtimer:SetVertexColor(1.0, 0.75, 0.75);
 		SP_ST_Frame:SetBackdropColor(1,0,0,0.8);
 		SP_ST_FrameOFF:SetBackdropColor(1,0,0,0.8);
 	end
@@ -748,9 +772,9 @@ function SP_ST_OnEvent()
 		UpdateSettings()
 		UpdateWeapon()
 		UpdateAppearance()
-		if not st_timerMax then st_timerMax = GetWeaponSpeed(false) end
-		if not st_timerOffMax and isDualWield() then st_timerOffMax = GetWeaponSpeed(true) end
-		if not st_timerRangeMax and isDualWield() then st_timerRangeMax = GetWeaponSpeed(nil,true) end
+		if not st_timerMax then st_timerMax = GetWeaponSpeed(0) end
+		if not st_timerOffMax and isDualWield() then st_timerOffMax = GetWeaponSpeed(1) end
+		if not st_timerRangeMax and isDualWield() then st_timerRangeMax = GetWeaponSpeed(2) end
 		print("SP_SwingTimer " .. version .. " loaded. Options: /st")
 	elseif (event == "PLAYER_REGEN_ENABLED")
 		or (event == "PLAYER_ENTERING_WORLD") then
@@ -794,7 +818,7 @@ function SP_ST_OnEvent()
 
 		if arg4 == 6603 then -- autoattack
 			if arg3 == "MAINHAND" then
-				ResetTimer(false)
+				ResetTimer(0)
 
 				if ele_flurry_fresh then
 					st_timer = st_timer / 1.3
@@ -817,7 +841,7 @@ function SP_ST_OnEvent()
 					st_timerMax = st_timerMax * flurry_mult
 				end
 			elseif arg3 == "OFFHAND" then
-				ResetTimer(true)
+				ResetTimer(1)
 
 				if flurry_fresh then -- fresh flurry, decrease the swing cooldown of the next swing
 					st_timerOff = st_timerOff / flurry_mult
@@ -839,7 +863,7 @@ function SP_ST_OnEvent()
 			return
 		elseif arg3 == "CAST" and arg4 == 5019 then
 			-- wand shoot, treat wand as offhand, no reason no to
-			ResetTimer(nil,true)
+			ResetTimer(2)
 			return
 		end
 
@@ -847,8 +871,8 @@ function SP_ST_OnEvent()
 		for _,v in L['combatSpells'] do
 			if spell == v and arg3 == "CAST" then
 				-- print(spellname .. " " .. flurry_count)
-				-- print(format("sp %.3f",GetWeaponSpeed(false)) .. " " .. flurry_count)
-				ResetTimer(false)
+				-- print(format("sp %.3f",GetWeaponSpeed(0)) .. " " .. flurry_count)
+				ResetTimer(0)
 				if flurry_fresh then
 					st_timer = st_timer / flurry_mult
 					st_timerMax = st_timerMax / flurry_mult
@@ -870,7 +894,7 @@ function SP_ST_OnEvent()
 
 			UpdateWeapon()
 			if (combat and oldWep ~= weapon) then
-				ResetTimer(false)
+				ResetTimer(0)
 			end
 
 			if offhand then
@@ -878,12 +902,12 @@ function SP_ST_OnEvent()
 				local _,_,itemId = string.find(offhand,"item:(%d+)")
 				local _name,_link,_,_lvl,wep_type,_subtype,_ = GetItemInfo(itemId)
 				if (combat and isDualWield() and ((oldOff ~= offhand) and (wep_type and wep_type == "Weapon"))) then
-					ResetTimer(true)
+					ResetTimer(1)
 				end
 			end
 
 			if (combat and oldRange ~= range) then
-				ResetTimer(nil,true)
+				ResetTimer(2)
 			end
 
 		end
@@ -893,8 +917,8 @@ function SP_ST_OnEvent()
 			-- Only the upcoming swing gets parry haste benefit
 			if (isDualWield()) then
 				if st_timerOff < st_timer then
-					local minimum = GetWeaponSpeed(true) * 0.20
-					local reduct = GetWeaponSpeed(true) * 0.40
+					local minimum = GetWeaponSpeed(1) * 0.20
+					local reduct = GetWeaponSpeed(1) * 0.40
 					st_timerOff = st_timerOff - reduct
 					if st_timerOff < minimum then
 						st_timer = minimum
@@ -903,9 +927,9 @@ function SP_ST_OnEvent()
 				end
 			end	
 
-			local minimum = GetWeaponSpeed(false) * 0.20
+			local minimum = GetWeaponSpeed(0) * 0.20
 			if (st_timer > minimum) then
-				local reduct = GetWeaponSpeed(false) * 0.40
+				local reduct = GetWeaponSpeed(0) * 0.40
 				local newTimer = st_timer - reduct
 				if (newTimer < minimum) then
 					st_timer = minimum
@@ -916,8 +940,9 @@ function SP_ST_OnEvent()
 		end
 	end
 end
-
+OneSecondLastUpdate = 0
 function SP_ST_OnUpdate(delta)
+	OneSecondLastUpdate = OneSecondLastUpdate + delta
 	if (st_timer > 0) and not paused_swing then
 		st_timer = st_timer - delta
 		if (st_timer < 0) then
@@ -935,6 +960,10 @@ function SP_ST_OnUpdate(delta)
 		if (st_timerRange < 0) then
 			st_timerRange = 0
 		end
+	end
+	if 1 < OneSecondLastUpdate then
+		OneSecondLastUpdate = 0
+		UpdateHeroicStrike()
 	end
 	UpdateDisplay()
 end
