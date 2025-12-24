@@ -1,5 +1,6 @@
 
 local version = "6.0.0"
+ST_LOGGING = false
 
 local defaults = {
 	x = 0,
@@ -96,6 +97,63 @@ local flurry_count = -1
 local wf_swings = 0
 
 --------------------------------------------------------------------------------
+
+
+local ResetsSwingCasts = { -- 0 Main-hand, 1 Off-hand, 2 Ranged, 3 Both-hands
+	--[[ NYI
+	["COMMON"] = {
+	-- Create Bandages, Pets, Mounts, Shadowmeld, Warstomp
+	},
+	--]]
+	["HUNTER"] = {},
+	["WARLOCK"] = {},
+	["DRUID"] = {
+		["Mark of the Wild"] = 0,
+		["Wrath"] = 0,
+		["Moonfire"] = 0,
+		["Starfire"] = 0,
+		["Entangling Roots"] = 0, -- May issue with Nature's Grasp?
+		["Thorns"] = 0,
+		["Healing touch"] = 0,
+		["Regrowth"] = 0,
+		["Rejuvenation"] = 0,
+		
+	},
+	["MAGE"] = {},
+	["SHAMAN"] = {
+		["Lightning Bolt"] = 0,
+		["Chain Lightning"] = 0,
+		["Molten Blast"] = 0,
+		["Lesser Healing Wave"] = 0,
+		["Healing Wave"] = 0,
+		["Chain Heal"] = 0,
+	},
+	["WARRIOR"] = {
+		["Shoot Bow"] = 3,
+		["Shoot Gun"] = 3,
+		["Shoot Crossbow"] = 3,
+		["Throw"] = 3,
+		["Slam"] = 1,
+	},
+	["ROGUE"] = {
+		["Shoot Bow"] = 3,
+		["Shoot Gun"] = 3,
+		["Shoot Crossbow"] = 3,
+		["Throw"] = 3,
+	},
+	["PRIEST"] = { -- Does not reset: Prayer of Spirit, Chastise, Sun's Embrace, Grace of the Sunwell, Inner Fire
+		["Flash Heal"] = 0,
+		
+	},
+	["PALADIN"] = {
+		["Holy Wrath"] = 0,
+		["Flash of Light"] = 0,
+		["Holy Light"] = 0,
+		["Turn Undead"] = 0,
+		["Repentance"] = 0,
+	}
+}
+
 local loc = {};
 loc["enUS"] = {
 	hit = "You hit",
@@ -165,21 +223,6 @@ local function SplitString(s,t)
 	return l
 end
 
--- This function is realy useful
-local function has_value (tab, val)
-    for value in ipairs(tab) do
-        if value == val then
-            return true
-        end
-    end
-
-    if (tab[val] ~= nil) then
-        return true
-    end
-
-    return false
-end
-
 local function sp_round(number, decimals)
     local power = 10^decimals
     return math.floor(number * power) / power
@@ -194,48 +237,6 @@ local function UpdateSettings()
 			SP_ST_GS[option] = value
 		end
 	end
-end
-
---------------------------------------------------------------------------------
-
-TrackedActionSlots = {}
-local function UpdateHeroicStrike()
-TrackedActionSlots = {}
-	local _, class = UnitClass("player")
-	if class ~= "WARRIOR" then
-		return
-	end
-	local SPActionSlot = 0;
-	for SPActionSlot = 1, 120 do
-		local SPActionText = GetActionText(SPActionSlot);
-		local SPActionTexture = GetActionTexture(SPActionSlot);
-		
-		if SPActionTexture then
-			if (SPActionTexture == "Interface\\Icons\\Ability_Rogue_Ambush" or SPActionTexture == "Interface\\Icons\\Ability_Warrior_Cleave") then
-				tinsert(TrackedActionSlots, SPActionSlot);
-			elseif SPActionText then
-				SPActionText = string.lower(SPActionText)
-				if (SPActionText == "cleave" or SPActionText == "heroic strike" or SPActionText == "heroicstrike" or SPActionText == "hs") then
-					tinsert(TrackedActionSlots, SPActionSlot);
-				end
-			end
-		end
-	end
-
-end
-
---------------------------------------------------------------------------------
-
-local function HeroicStrikeQueued()
-	if not getn(TrackedActionSlots) then
-		return nil
-	end
-	for _, actionslotID in ipairs(TrackedActionSlots) do
-		if IsCurrentAction(actionslotID) then
-			return true
-		end
-	end
-	return nil
 end
 
 --------------------------------------------------------------------------------
@@ -372,18 +373,22 @@ local function GetWeaponSpeed(weapon)
 		return speedOH
 	end
 	if weapon == 2 then
-		local rangedAttackSpeed, minDamage, maxDamage, physicalBonusPos, physicalBonusNeg, percent = UnitRangedDamage("player")
+		-- Returns 2 for librams, relics, assume no damage means no ranged weapon
+		local rangedAttackSpeed, minDamage --[[maxDamage, physicalBonusPos, physicalBonusNeg, percent--]] = UnitRangedDamage("player")
 		return rangedAttackSpeed
 	end
 end
 
 local function isDualWield()
-	return (GetWeaponSpeed(1) ~= nil)
+	return GetWeaponSpeed(1) ~= nil
 end
 
 local function hasRanged()
-  if GetWeaponSpeed(2) == 1 then return false end
-	return true
+	if player_class == "PALADIN" or player_class == "DRUID" or player_class == "SHAMAN" then return false end
+	-- Doesn't work
+	local rangedAttackSpeed, minDamage --[[maxDamage, physicalBonusPos, physicalBonusNeg, percent--]] = UnitRangedDamage("player")
+	if minDamage ~= 0 then return true end
+	return false
 end
 
 local function ShouldResetTimer(off)
@@ -431,21 +436,25 @@ local function UpdateWeapon()
 end
 
 local function ResetTimer(weapon)
-	if weapon == 0 then
-		st_timerMax = GetWeaponSpeed(0)
-		st_timer = GetWeaponSpeed(0)
-	elseif weapon == 1 then
-		st_timerOffMax = GetWeaponSpeed(1)
-		st_timerOff = GetWeaponSpeed(1)
-	else
-		range_fader = GetTime()
-		st_timerRangeMax = GetWeaponSpeed(2)
-		st_timerRange = GetWeaponSpeed(2)
+	local speedMH, speedOH = UnitAttackSpeed("player")
+	if (weapon == 0 or weapon == 3) and speedMH ~= nil then
+		st_timerMax = speedMH
+		st_timer = speedMH
 	end
-
-	if weapon == 0 then SP_ST_Frame:Show() end
-	if (isDualWield()) then SP_ST_FrameOFF:Show() end
-	if (hasRanged()) then SP_ST_FrameRange:Show() end
+	if (weapon == 1 or weapon == 3) and speedOH ~=nil then
+		st_timerOffMax = speedOH
+		st_timerOff = speedOH
+	end
+	local rangedAttackSpeed, minDamage = UnitRangedDamage("player")
+	if weapon == 2 then
+		range_fader = GetTime()
+		st_timerRangeMax = rangedAttackSpeed
+		st_timerRange = rangedAttackSpeed
+	end
+	
+	if speedOH ~=nil then SP_ST_FrameOFF:Show() end
+	if weapon == 0 or weapon == 3 then SP_ST_Frame:Show() end
+	if minDamage ~= 0 then SP_ST_FrameRange:Show() end
 end
 
 local function TestShow()
@@ -453,19 +462,34 @@ local function TestShow()
 end
 
 
+QueuedSkillsColors = {
+	["Default"] = {1.0,0.9,0.2, 0.862,0.7,0.137,  1.0,0.7,0.15, 1.0,0.45,0.055},
+	["Heroic Strike"] = {1.0,0.9,0.2, 0.862,0.7,0.137,  1.0,0.7,0.15, 1.0,0.45,0.055},
+	["Cleave"] = {0.45,0.9,0.2, 0.4,0.8,0.137,  0.45,0.75,0.15, 0.45,0.65,0.055},
+}
+
 local function UpdateDisplay()
 	local style = SP_ST_GS["style"]
 	local show_oh = SP_ST_GS["show_oh"]
 	local show_range = SP_ST_GS["show_range"]
+	local colors = {}
+	if SkillQueuedId ~= nil then
+		if QueuedSkillsColors[SkillQueuedName] == nil then
+			colors = QueuedSkillsColors["Default"]
+		else 
+			colors = QueuedSkillsColors[SkillQueuedName]
+		end
+	end
+	
 	if SP_ST_InRange() then
-		if HeroicStrikeQueued() then
-			SP_ST_mainhand:SetVertexColor(1.0, 0.9, 0.2);
-			SP_ST_FrameTime:SetVertexColor(0.862, 0.7, 0.137);
-			SP_ST_maintimer:SetVertexColor(1.0, 0.9, 0.2);
+		if SkillQueuedId then
+			SP_ST_mainhand:SetVertexColor(colors[1], colors[2], colors[3]);
+			SP_ST_maintimer:SetVertexColor(colors[1], colors[2], colors[3]);
+			SP_ST_FrameTime:SetVertexColor(colors[4], colors[5], colors[6]);
 		else 
 			SP_ST_mainhand:SetVertexColor(1.0, 1.0, 1.0);
-			SP_ST_FrameTime:SetVertexColor(1.0, 1.0, 1.0);
 			SP_ST_maintimer:SetVertexColor(1.0, 1.0, 1.0);
+			SP_ST_FrameTime:SetVertexColor(1.0, 1.0, 1.0);
 		end
 		SP_ST_offhand:SetVertexColor(1.0, 1.0, 1.0);
 		SP_ST_FrameTime2:SetVertexColor(1.0, 1.0, 1.0);
@@ -473,14 +497,14 @@ local function UpdateDisplay()
 		SP_ST_Frame:SetBackdropColor(0,0,0,0.8);
 		SP_ST_FrameOFF:SetBackdropColor(0,0,0,0.8);
 	else
-		if HeroicStrikeQueued() then
-			SP_ST_mainhand:SetVertexColor(1.0, 0.7, 0.15);
-			SP_ST_FrameTime:SetVertexColor(1.0, 0.45, 0.055);
-			SP_ST_maintimer:SetVertexColor(1.0, 0.7, 0.15);
+		if SkillQueuedId then
+			SP_ST_mainhand:SetVertexColor(colors[7], colors[8], colors[9]);
+			SP_ST_maintimer:SetVertexColor(colors[7], colors[8], colors[9]);
+			SP_ST_FrameTime:SetVertexColor(colors[10], colors[11], colors[12]);
 		else
 			SP_ST_mainhand:SetVertexColor(1.0, 0, 0);
-			SP_ST_FrameTime:SetVertexColor(1.0, 0, 0);
 			SP_ST_maintimer:SetVertexColor(1.0, 0.75, 0.75);
+			SP_ST_FrameTime:SetVertexColor(1.0, 0, 0);
 		end
 		SP_ST_offhand:SetVertexColor(1.0, 0, 0);
 		SP_ST_FrameTime2:SetVertexColor(1.0, 0, 0);
@@ -488,7 +512,7 @@ local function UpdateDisplay()
 		SP_ST_Frame:SetBackdropColor(1,0,0,0.8);
 		SP_ST_FrameOFF:SetBackdropColor(1,0,0,0.8);
 	end
-	if CheckInteractDistance("target",4) then
+	if CheckInteractDistance("target", 4) then
 		SP_ST_FrameTime3:SetVertexColor(1.0, 1.0, 1.0);
 		SP_ST_FrameRange:SetBackdropColor(0,0,0,0.8);
 	else
@@ -500,7 +524,7 @@ local function UpdateDisplay()
 		SP_ST_FrameRange:Hide()
 	end
 
-	if (st_timer <= 0) then
+	if st_timer <= 0 then
 		if style == 2 or style == 4 or style == 6 then
 			--nothing
 		else
@@ -675,7 +699,7 @@ local instants = {
 local range_check_slot = nil
 function SP_ST_Check_Actions(slot)
 	if slot then
-		local name,actionType,identifier = GetActionText(slot);
+		local name, actionType, identifier = GetActionText(slot);
 
 		if actionType and identifier and actionType == "SPELL" then
 			local name,rank,texture = SpellInfo(identifier)
@@ -687,7 +711,7 @@ function SP_ST_Check_Actions(slot)
 	end
 
 	for i=1,120 do
-		local name,actionType,identifier = GetActionText(i);
+		local name, actionType, identifier = GetActionText(i);
 		-- if ActionHasRange(i) then
 		-- 	print(SpellInfo(identifier))
 		-- end
@@ -707,7 +731,8 @@ function SP_ST_Check_Actions(slot)
 end
 
 function SP_ST_InRange()
-	-- if the slot is nil anyway then there's no sense being red all the time
+	-- if the slot is nil anyway then there's no sense being red all the time 
+	-- /run print(SpellInfo(6603)) print(UnitXP("distanceBetween", "player", "target"))
 	return range_check_slot == nil or IsActionInRange(range_check_slot) == 1
 end
 
@@ -745,6 +770,7 @@ function SP_ST_OnLoad()
 	this:RegisterEvent("CHAT_MSG_COMBAT_HOSTILEPLAYER_MISSES")
 	this:RegisterEvent("CHAT_MSG_SPELL_HOSTILEPLAYER_DAMAGE")
 	this:RegisterEvent("CHARACTER_POINTS_CHANGED")
+	this:RegisterEvent("SPELL_CAST_EVENT")
 	this:RegisterEvent("UNIT_CASTEVENT")
 	-- this:RegisterEvent("UNIT_AURA")
 	-- this:RegisterEvent("PLAYER_AURAS_CHANGED")
@@ -752,6 +778,8 @@ function SP_ST_OnLoad()
 	this:RegisterEvent("ACTIONBAR_SLOT_CHANGED")
 end
 
+SkillQueuedId = nil
+SkillQueuedName = nil
 function SP_ST_OnEvent()
 	if (event == "ADDON_LOADED" and arg1 == "SP_SwingTimer") then
 		if (SP_ST_GS == nil) then
@@ -776,7 +804,7 @@ function SP_ST_OnEvent()
 		if not st_timerOffMax and isDualWield() then st_timerOffMax = GetWeaponSpeed(1) end
 		if not st_timerRangeMax and isDualWield() then st_timerRangeMax = GetWeaponSpeed(2) end
 		print("SP_SwingTimer " .. version .. " loaded. Options: /st")
-	elseif (event == "PLAYER_REGEN_ENABLED")
+	elseif event == "PLAYER_REGEN_ENABLED"
 		or (event == "PLAYER_ENTERING_WORLD") then
 		_,player_guid = UnitExists("player")
 		_,player_class = UnitClass("player")
@@ -786,17 +814,37 @@ function SP_ST_OnEvent()
 		CheckFlurry()
 		UpdateDisplay()
 		SP_ST_Check_Actions()
-	elseif (event == "PLAYER_REGEN_DISABLED") then
+	elseif event == "PLAYER_REGEN_DISABLED" then
 		combat = true
 		wf_swings = 0
 		CheckFlurry()
 	elseif (event == "CHARACTER_POINTS_CHANGED") then
 		GetFlurry(player_class)
-	elseif (evet == "ACTIONBAR_SLOT_CHANGED") then
+	elseif (event == "ACTIONBAR_SLOT_CHANGED") then
 		SP_ST_Check_Actions(arg1)
+		
+	elseif event == "SPELL_CAST_EVENT" then 
+		-- print("SPELLCAST".."--"..arg1.."--"..arg2.."--"..arg3.."--"..arg4.."--"..arg5)
+		local spell = SpellInfo(arg2)
+		
+		if arg1 == 1 and arg3 == 2 and QueuedSkillsColors[spell] ~= nil then
+			SkillQueuedId = arg2
+			SkillQueuedName = spell
+			if ST_LOGGING then print(spell .." - Queued") end
+		end
 	elseif (event == "UNIT_CASTEVENT" and arg1 == player_guid) then
 		local spell = SpellInfo(arg4)
-		-- print(spell .. " "..arg4)
+		if ST_LOGGING and spell ~= "Deep Wounds" and spell ~= "Deep Wound" then
+			print("UNIT_CASTEVENT".." ~ "..arg2.." ~ "..arg3.." ~ "..arg4)
+			print(spell)
+		end
+		
+		if arg4 == SkillQueuedId then
+			if ST_LOGGING then print(SkillQueuedName.." - End") end
+			SkillQueuedId = nil
+			SkillQueuedName = nil
+		end
+		if ResetsSwingCasts[player_class][spell] and arg3 == "CAST" then ResetTimer(ResetsSwingCasts[player_class][spell]) end
 
 		-- wf proc happens first, then the normal hit, then the 1-2 wf hits
 		-- if flurry_count > 0 then
@@ -963,7 +1011,6 @@ function SP_ST_OnUpdate(delta)
 	end
 	if 1 < OneSecondLastUpdate then
 		OneSecondLastUpdate = 0
-		UpdateHeroicStrike()
 	end
 	UpdateDisplay()
 end
