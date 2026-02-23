@@ -117,6 +117,7 @@ local ResetsSwingCasts = { -- 0 Main-hand, 1 Off-hand, 2 Ranged, 3 Both-hands
 		["Healing touch"] = 0,
 		["Regrowth"] = 0,
 		["Rejuvenation"] = 0,
+		["Faerie Fire"] = 0,
 		
 	},
 	["MAGE"] = {},
@@ -316,20 +317,19 @@ local function UpdateAppearance()
 	SP_ST_FrameTime3:ClearAllPoints()
 
 	local style = SP_ST_GS["style"]
+	local anchor = nil
 	if style == 1 or style == 2 then
-		SP_ST_mainhand:SetPoint("LEFT", "SP_ST_Frame", "LEFT");
-		SP_ST_offhand:SetPoint("LEFT", "SP_ST_FrameOFF", "LEFT");
-		SP_ST_range:SetPoint("LEFT", "SP_ST_FrameRange", "LEFT");
-		SP_ST_FrameTime:SetPoint("LEFT", "SP_ST_mainhand", "LEFT")
-		SP_ST_FrameTime2:SetPoint("LEFT", "SP_ST_FrameOFF", "LEFT") -- ??
-		SP_ST_FrameTime3:SetPoint("LEFT", "SP_ST_FrameRange", "LEFT") -- ??
+		anchor = "LEFT"
 	elseif style == 3 or style == 4 then
-		SP_ST_mainhand:SetPoint("RIGHT", "SP_ST_Frame", "RIGHT");
-		SP_ST_offhand:SetPoint("RIGHT", "SP_ST_FrameOFF", "RIGHT");
-		SP_ST_range:SetPoint("RIGHT", "SP_ST_FrameRange", "RIGHT");
-		SP_ST_FrameTime:SetPoint("RIGHT", "SP_ST_mainhand", "RIGHT") -- ??
-		SP_ST_FrameTime2:SetPoint("RIGHT", "SP_ST_offhand", "RIGHT") -- ??
-		SP_ST_FrameTime3:SetPoint("RIGHT", "SP_ST_range", "RIGHT") -- ??
+		anchor = "RIGHT"
+	end
+	if anchor ~= nil then
+		SP_ST_mainhand:SetPoint(anchor, "SP_ST_Frame", anchor);
+		SP_ST_offhand:SetPoint(anchor, "SP_ST_FrameOFF", anchor);
+		SP_ST_range:SetPoint(anchor, "SP_ST_FrameRange", anchor);
+		SP_ST_FrameTime:SetPoint(anchor, "SP_ST_mainhand", anchor) -- ??
+		SP_ST_FrameTime2:SetPoint(anchor, "SP_ST_offhand", anchor) -- ??
+		SP_ST_FrameTime3:SetPoint(anchor, "SP_ST_range", anchor) -- ??
 	else
 		SP_ST_mainhand:SetTexture(nil);
 		SP_ST_mainhand:SetWidth(0);
@@ -468,11 +468,27 @@ QueuedSkillsColors = {
 	["Cleave"] = {0.45,0.9,0.2, 0.4,0.8,0.137,  0.45,0.75,0.15, 0.45,0.65,0.055},
 }
 
+
+local lastColors = {}
+
+--[[if lastMainColorR ~= r or lastMainColorG ~= g or lastMainColorB ~= b then
+    SP_ST_mainhand:SetVertexColor(r, g, b)
+    lastMainColorR = r
+    lastMainColorG = g
+    lastMainColorB = b
+end
+--]]
+
+local lastUpdateState = 0
+local lastUpdateIsOnRangeRanged
 local function UpdateDisplay()
+	local width = SP_ST_GS["w"]
 	local style = SP_ST_GS["style"]
 	local show_oh = SP_ST_GS["show_oh"]
 	local show_range = SP_ST_GS["show_range"]
+	local timers = SP_ST_GS["timers"]
 	local colors = {}
+	local reverse = (style == 2 or style == 4 or style == 6) -- idk why this was done like this
 	if SkillQueuedId ~= nil then
 		if QueuedSkillsColors[SkillQueuedName] == nil then
 			colors = QueuedSkillsColors["Default"]
@@ -481,51 +497,64 @@ local function UpdateDisplay()
 		end
 	end
 	
-	if SP_ST_InRange() then
-		if SkillQueuedId then
-			SP_ST_mainhand:SetVertexColor(colors[1], colors[2], colors[3]);
-			SP_ST_maintimer:SetVertexColor(colors[1], colors[2], colors[3]);
-			SP_ST_FrameTime:SetVertexColor(colors[4], colors[5], colors[6]);
-		else 
-			SP_ST_mainhand:SetVertexColor(1.0, 1.0, 1.0);
-			SP_ST_maintimer:SetVertexColor(1.0, 1.0, 1.0);
-			SP_ST_FrameTime:SetVertexColor(1.0, 1.0, 1.0);
-		end
-		SP_ST_offhand:SetVertexColor(1.0, 1.0, 1.0);
-		SP_ST_FrameTime2:SetVertexColor(1.0, 1.0, 1.0);
-		SP_ST_offtimer:SetVertexColor(1.0, 1.0, 1.0);
-		SP_ST_Frame:SetBackdropColor(0,0,0,0.8);
-		SP_ST_FrameOFF:SetBackdropColor(0,0,0,0.8);
-	else
-		if SkillQueuedId then
-			SP_ST_mainhand:SetVertexColor(colors[7], colors[8], colors[9]);
-			SP_ST_maintimer:SetVertexColor(colors[7], colors[8], colors[9]);
-			SP_ST_FrameTime:SetVertexColor(colors[10], colors[11], colors[12]);
-		else
+	
+	local melee = SP_ST_InRange()
+	local queued = SkillQueuedId and true or false
+
+
+	local state = (queued and 1 or 0) + (SP_ST_InRange() and 2 or 0)
+	if state ~= lastUpdateState then
+		lastUpdateState = state
+		if state     == 0 then -- Not in range, not queued
 			SP_ST_mainhand:SetVertexColor(1.0, 0, 0);
 			SP_ST_maintimer:SetVertexColor(1.0, 0.75, 0.75);
 			SP_ST_FrameTime:SetVertexColor(1.0, 0, 0);
+		elseif state == 1 then -- Not in range, queued
+			SP_ST_mainhand:SetVertexColor(colors[7], colors[8], colors[9]);
+			SP_ST_maintimer:SetVertexColor(colors[7], colors[8], colors[9]);
+			SP_ST_FrameTime:SetVertexColor(colors[10], colors[11], colors[12]);
+		elseif state == 2 then -- In range, not queued
+			SP_ST_mainhand:SetVertexColor(1.0, 1.0, 1.0);
+			SP_ST_maintimer:SetVertexColor(1.0, 1.0, 1.0);
+			SP_ST_FrameTime:SetVertexColor(1.0, 1.0, 1.0);
+		elseif state == 3 then -- In range, queued
+			SP_ST_mainhand:SetVertexColor(colors[1], colors[2], colors[3]);
+			SP_ST_maintimer:SetVertexColor(colors[1], colors[2], colors[3]);
+			SP_ST_FrameTime:SetVertexColor(colors[4], colors[5], colors[6]);
 		end
-		SP_ST_offhand:SetVertexColor(1.0, 0, 0);
-		SP_ST_FrameTime2:SetVertexColor(1.0, 0, 0);
-		SP_ST_offtimer:SetVertexColor(1.0, 0.75, 0.75);
-		SP_ST_Frame:SetBackdropColor(1,0,0,0.8);
-		SP_ST_FrameOFF:SetBackdropColor(1,0,0,0.8);
+		if state == 2 or 3 then -- In range
+			SP_ST_offhand:SetVertexColor(1.0, 1.0, 1.0);
+			SP_ST_FrameTime2:SetVertexColor(1.0, 1.0, 1.0);
+			SP_ST_offtimer:SetVertexColor(1.0, 1.0, 1.0);
+			SP_ST_Frame:SetBackdropColor(0,0,0,0.8);
+			SP_ST_FrameOFF:SetBackdropColor(0,0,0,0.8);
+		else -- not in range
+			SP_ST_offhand:SetVertexColor(1.0, 0, 0);
+			SP_ST_FrameTime2:SetVertexColor(1.0, 0, 0);
+			SP_ST_offtimer:SetVertexColor(1.0, 0.75, 0.75);
+			SP_ST_Frame:SetBackdropColor(1,0,0,0.8);
+			SP_ST_FrameOFF:SetBackdropColor(1,0,0,0.8);
+		end
 	end
-	if CheckInteractDistance("target", 4) then
-		SP_ST_FrameTime3:SetVertexColor(1.0, 1.0, 1.0);
-		SP_ST_FrameRange:SetBackdropColor(0,0,0,0.8);
-	else
-		SP_ST_FrameTime3:SetVertexColor(1.0, 0, 0);
-		SP_ST_FrameRange:SetBackdropColor(1,0,0,0.8);
+	
+	ranged = CheckInteractDistance("target", 4)
+	if ranged ~= lastUpdateIsOnRangeRanged then
+		lastUpdateIsOnRangeRanged = ranged
+		if ranged then -- 28y
+			SP_ST_FrameTime3:SetVertexColor(1.0, 1.0, 1.0);
+			SP_ST_FrameRange:SetBackdropColor(0,0,0,0.8);
+		else
+			SP_ST_FrameTime3:SetVertexColor(1.0, 0, 0);
+			SP_ST_FrameRange:SetBackdropColor(1,0,0,0.8);
+		end
 	end
 	-- most classes won't want ranged indicator to stay up all the time
 	if GetTime() - 10 > range_fader then
 		SP_ST_FrameRange:Hide()
 	end
-
+    -- laggy
 	if st_timer <= 0 then
-		if style == 2 or style == 4 or style == 6 then
+		if reverse then
 			--nothing
 		else
 			SP_ST_FrameTime:Hide()
@@ -536,9 +565,8 @@ local function UpdateDisplay()
 		end
 	else
 		SP_ST_FrameTime:Show()
-		local width = SP_ST_GS["w"]
 		local size = (st_timer / st_timerMax) * width
-		if style == 2 or style == 4 or style == 6 then
+		if reverse then
 			size = width - size
 		end
 		if (size > width) then
@@ -548,18 +576,19 @@ local function UpdateDisplay()
 			SP_ST_FrameTime:SetTexture(1, 1, 1, 1)
 		end
 		SP_ST_FrameTime:SetWidth(size)
-		if (SP_ST_GS["timers"] ~= 0) then
+		if (timers ~= 0) then
 			local showtmr = sp_round(st_timer, 1);
 			if (math.floor(showtmr) == showtmr) then
 				showtmr = showtmr..".0";
 			end
 			SP_ST_maintimer:SetText(showtmr);
+			
 		end
 	end
-
+	-- laggy
 	if (hasRanged() and show_range) then
 		if (st_timerRange <= 0) then
-			if style == 2 or style == 4 or style == 6 then
+			if reverse then
 				--nothing
 			else
 				SP_ST_FrameTime3:Hide()
@@ -570,9 +599,8 @@ local function UpdateDisplay()
 			end
 		else
 			SP_ST_FrameTime3:Show()
-			local width = SP_ST_GS["w"]
 			local size2 = (st_timerRange / st_timerRangeMax) * width
-			if style == 2 or style == 4 or style == 6 then
+			if reverse then
 				size2 = width - size2
 			end
 			if (size2 > width) then
@@ -582,7 +610,7 @@ local function UpdateDisplay()
 				SP_ST_FrameTime3:SetTexture(1, 1, 1, 1)
 			end
 			SP_ST_FrameTime3:SetWidth(size2)
-			if (SP_ST_GS["timers"] ~= 0) then
+			if (timers ~= 0) then
 				local showtmr = sp_round(st_timerRange, 1);
 				if (math.floor(showtmr) == showtmr) then
 					showtmr = showtmr..".0";
@@ -593,10 +621,10 @@ local function UpdateDisplay()
 	else
 		SP_ST_FrameRange:Hide()
 	end
-
+	-- laggy
 	if (isDualWield() and show_oh) then
 		if (st_timerOff <= 0) then
-			if style == 2 or style == 4 or style == 6 then
+			if reverse then
 				--nothing
 			else
 				SP_ST_FrameTime2:Hide()
@@ -607,9 +635,8 @@ local function UpdateDisplay()
 			end
 		else
 			SP_ST_FrameTime2:Show()
-			local width = SP_ST_GS["w"]
 			local size2 = (st_timerOff / st_timerOffMax) * width
-			if style == 2 or style == 4 or style == 6 then
+			if reverse then
 				size2 = width - size2
 			end
 			if (size2 > width) then
@@ -619,7 +646,7 @@ local function UpdateDisplay()
 				SP_ST_FrameTime2:SetTexture(1, 1, 1, 1)
 			end
 			SP_ST_FrameTime2:SetWidth(size2)
-			if (SP_ST_GS["timers"] ~= 0) then
+			if (timers ~= 0) then
 				local showtmr = sp_round(st_timerOff, 1);
 				if (math.floor(showtmr) == showtmr) then
 					showtmr = showtmr..".0";
@@ -812,7 +839,7 @@ function SP_ST_OnEvent()
 
 		GetFlurry(player_class)
 		CheckFlurry()
-		UpdateDisplay()
+		--UpdateDisplay()
 		SP_ST_Check_Actions()
 	elseif event == "PLAYER_REGEN_DISABLED" then
 		combat = true
@@ -824,10 +851,10 @@ function SP_ST_OnEvent()
 		SP_ST_Check_Actions(arg1)
 		
 	elseif event == "SPELL_CAST_EVENT" then 
-		-- print("SPELLCAST".."--"..arg1.."--"..arg2.."--"..arg3.."--"..arg4.."--"..arg5)
 		local spell = SpellInfo(arg2)
+		--print("SPELLCAST".."--"..arg1.."--"..arg2.."--"..arg3.."--"..arg4.."--"..arg5)
 		
-		if arg1 == 1 and arg3 == 2 and QueuedSkillsColors[spell] ~= nil then
+		if arg1 == 1 and arg3 == 2 then
 			SkillQueuedId = arg2
 			SkillQueuedName = spell
 			if ST_LOGGING then print(spell .." - Queued") end
@@ -988,30 +1015,23 @@ function SP_ST_OnEvent()
 		end
 	end
 end
-OneSecondLastUpdate = 0
+--LastUpdateDisplay = 0
 function SP_ST_OnUpdate(delta)
-	OneSecondLastUpdate = OneSecondLastUpdate + delta
+	--LastUpdateDisplay = LastUpdateDisplay + delta
 	if (st_timer > 0) and not paused_swing then
-		st_timer = st_timer - delta
-		if (st_timer < 0) then
-			st_timer = 0
-		end
+		st_timer = math.max(st_timer - delta, 0)
 	end
 	if (st_timerOff > 0) and not paused_swingOH then
-		st_timerOff = st_timerOff - delta
-		if (st_timerOff < 0) then
-			st_timerOff = 0
-		end
+		st_timerOff = math.max(st_timerOff - delta, 0)
 	end
 	if (st_timerRange > 0) then
-		st_timerRange = st_timerRange - delta
-		if (st_timerRange < 0) then
-			st_timerRange = 0
-		end
+		st_timerRange = math.max(st_timerRange - delta, 0)
 	end
-	if 1 < OneSecondLastUpdate then
-		OneSecondLastUpdate = 0
+	--[[
+	if 0.008333 <= LastUpdateDisplay then
+		LastUpdateDisplay = LastUpdateDisplay - 0.008333
 	end
+	--]]
 	UpdateDisplay()
 end
 
